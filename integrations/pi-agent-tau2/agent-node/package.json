@@ -1,0 +1,14 @@
+{
+  "name": "pi-agent-tau2-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "pi 栈（pi-ai）Agent 桥：为 tau2-bench 提供被测 Agent 的模型层，内嵌确定性 mock 端点",
+  "main": "src/server.mjs",
+  "scripts": {
+    "start": "node src/server.mjs"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "^0.85.1"
+  }
+}

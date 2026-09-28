@@ -1,0 +1,4 @@
+interface:
+  display_name: "Fuju RSI · 问数改进"
+  short_description: "真实重跑问数 Agent，比较改动并检查验收证据"
+  default_prompt: "使用 $fuju-tune，检查当前问数 Agent 的真实运行入口，先建立原版，再比较改动并报告证据。"

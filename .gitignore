@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+*.egg-info/
+console/node_modules/
+console/dist/
+.fuju-rsi/
+*-workspace/
+**/private-logs/
+**/holdout/
+**/holdout-*/
+**/results/
+**/evidence/
+**/*.jsonl
+**/*.log

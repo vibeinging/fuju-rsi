@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "role": "development",
+  "id": "ask-data-fixture",
+  "name": "离线问数协议演示",
+  "environment": {
+    "dataSnapshot": "sqlite-fixture-v1",
+    "contextRevision": "sum-orders-v1"
+  },
+  "sources": [
+    {
+      "id": "store-a",
+      "kind": "synthetic-fixture",
+      "ref": "example-orders-store-a",
+      "familyId": "store-a-revenue",
+      "split": "train"
+    },
+    {
+      "id": "store-b",
+      "kind": "synthetic-fixture",
+      "ref": "example-orders-store-b",
+      "familyId": "store-b-revenue",
+      "split": "validation"
+    }
+  ],
+  "cases": [
+    {
+      "id": "store-a-amount",
+      "sourceId": "store-a",
+      "question": "门店 A 的订单金额是多少？",
+      "tags": ["求和", "训练"],
+      "status": "ready",
+      "expected": {
+        "behavior": "answer",
+        "result": {
+          "columns": ["amount"],
+          "rows": [[100]],
+          "ordered": true,
+          "unit": "元"
+        }
+      },
+      "oracle": {
+        "verified": true,
+        "method": "manual-fixture-sum",
+        "evidence": "固定订单 40+60=100",
+        "dataSnapshot": "sqlite-fixture-v1",
+        "contextRevision": "sum-orders-v1"
+      }
+    },
+    {
+      "id": "store-b-amount",
+      "sourceId": "store-b",
+      "question": "门店 B 的订单金额是多少？",
+      "tags": ["求和", "验证"],
+      "status": "ready",
+      "expected": {
+        "behavior": "answer",
+        "result": {
+          "columns": ["amount"],
+          "rows": [[80]],
+          "ordered": true,
+          "unit": "元"
+        }
+      },
+      "oracle": {
+        "verified": true,
+        "method": "manual-fixture-sum",
+        "evidence": "固定订单 30+50=80",
+        "dataSnapshot": "sqlite-fixture-v1",
+        "contextRevision": "sum-orders-v1"
+      }
+    }
+  ]
+}
