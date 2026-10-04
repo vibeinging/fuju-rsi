@@ -1,7 +1,7 @@
 # Fuju RSI 问数场景实施记录
 
 日期：2026-09-28
-状态：离线协议与可复制 Skill 入口已接通；真实业务接入和独立验收尚未执行
+状态：离线协议、可复制 Skill 与配置文件比较已接通；真实业务接入和配置独立验收尚未执行（2026-10-03 更新）
 
 ## 本轮完成
 
@@ -41,3 +41,33 @@
 - 真实问数产品 runner、结果持久化解析、业务标准答案复核、模型条件固定及独立 holdout 尚待指定目标环境并实跑。合成演示不能替代这些证据。
 
 相关实现：src/fuju_rsi/ask_data.py、src/fuju_rsi/ask_data_validation.py、src/fuju_rsi/workspace.py、src/fuju_rsi/verification.py、skills/fuju-tune/scripts/run_experiment.py。测试：tests/test_ask_data.py、tests/test_ask_data_validation.py、tests/test_skill_ask_data.py。
+
+## 2026-10-03 Review 问题复现与修复
+
+本轮使用合成数据和本地回调，先让持久回归测试复现问题，再修改实现。没有调用付费模型、接入线上业务、提交或推送代码。
+
+| 问题 | 修复和回归证据 |
+| --- | --- |
+| RSI01 数值比较受 Decimal 默认精度影响 | 比较键和容差计算使用精确分数；相差 1 的超长整数不会误判相等，0 与 -0 相等。 |
+| RSI02 业务 JSON 与内部数值键碰撞 | 所有 JSON 类型都带内部类型标签；数字 1 与业务对象 `{"number":"1"}` 区分。 |
+| RSI03 多轮首个错误答案遮住后续运行异常 | 继续检查全部必要轮次；后续运行或结果格式异常保留为异常，不能记成普通业务零分。 |
+| RSI04 手写案例可绕过父来源检查 | freeze/load 共用父关系检查，父题须同来源、同组、同用途，拒绝缺失父题、自引用和循环。 |
+| RSI05 Ask Data Runtime 运行时缺开发包和验证账本 | factory 接收校验后的开发包路径，环境变量随后恢复；初始化显式绑定已有共享账本，缺账本在创建工作区前失败，换账本在调用业务前失败。同一 run id 读取原结果，后续运行继续累计访问。 |
+| RSI06 SystemExit 留下 running | 后台工作线程和验收捕获退出类异常，记录失败或取消终态，批次访问不返还，后续实验能开始。 |
+| RSI07 两个验收线程交叉替换 stdout | SDK/CLI/Skill 共用可重入捕获锁，同进程私有捕获串行，日志归属与 stdout 恢复有并发回归；并行私有验收应使用独立进程。 |
+
+新增 `tests/test_review_regressions.py` 共 10 个用例，修复前失败，修复后全部通过；完整 Python 测试集 252 项通过，Skill 专项 45 项通过。wheel 在临时环境中构建后，干净安装 consumer 检查通过，包含控制台资源、CLI、报告和可复制 Skill。日志：`/tmp/fuju-rsi-fix-review-red-20261003.log`、`/tmp/fuju-rsi-fix-review-green-20261003.log`、`/tmp/fuju-rsi-fix-all-20261003.log`、`/tmp/fuju-rsi-fix-consumer-20261003.log`。
+
+这些证据验证评分和执行协议，不代表真实问数准确率提升或通过业务独立验收。输出捕获锁只协调使用同一捕获入口的代码；同进程其他线程自行修改 stdout、宿主日志或直接写文件描述符，不构成权限隔离。共享账本仍是本地实验约束，没有改变采用门槛。
+
+## 2026-10-03 配置候选比较
+
+新增版本化 `FileBaseline` / `FileCandidate` 与 `FileExperimentSpec`、`compare-files`。支持词典、项目规则和指标上下文；原版、候选、声明文件和 JSON 字段范围绑定摘要，逐案例使用新临时目录并核对真实读取字节的 SHA256。代码或评分函数漂移、目录修改、来源漂移、预算中断及运行异常不能进入完整成功。问数文件比较复用冻结开发包、共享验证账本和来源边界。
+
+交付普通 `candidate/`、原版 `baseline/`、`changes.diff`、汇总报告和可复用 `candidate.json`；导出目录原子生成，拒绝覆盖与恢复包替换。CLI 和复制 Skill 支持文件模式，旧提示词工作区、冻结、采用及发布入口拒绝文件候选。当前文件比较始终 `adoptable=false`，没有启用独立配置验收或业务发布。
+
+实现前基线 252 项通过；新增边界反例先失败再修复，最终完整集 306 项通过。新增 54 项覆盖模型 23、隔离运行 17、CLI/Skill 7、旧入口及提前退出 7。最终 wheel 干净安装及 `pip check`、独立目录 CLI、复制 Skill 实际运行通过；业务目录用 `python -I -S` 确认无法导入 RSI 后仍读取普通候选文件并运行。场景清单检查及 diff 格式检查通过。日志：`/tmp/fuju-rsi-file-final-tests-20261003.log`、`/tmp/fuju-rsi-file-final-consumer-20261003.log`。
+
+SQLite 夹具只修正金额别名指向既有指标，保留 SQL、单位和独立答案。5 次回调中训练与验证评分从 0 到 1，属于已知合成回归证据。临时目录不是系统沙箱，摘要依赖适配器实际读回，`preserving` 声明不是业务等价证明。真实问数的隔离配置、全量结果、业务生效与独立验收仍待接入；费用/速度选优及经验复用也未实现。未调用付费模型、修改评分或正式答案、提交、推送或发布。
+
+接口和复现命令见 [配置候选指南](../../skills/fuju-tune/references/file-candidates.md)。本节保存可随仓库分发的实施结论与复现入口。

@@ -53,6 +53,9 @@ class ExperimentManager:
     def __init__(self, directory, agents, *, verification_authorities=None, project_root=None,
                  telemetry_mode="auto", telemetry_plugin=None, trace_sqlite_path=None,
                  ask_data_bundle=None, validation_ledger=None):
+        agents = list(agents)
+        if any(isinstance(agent, AgentSpec) and agent.candidate_kind != "prompt" for agent in agents):
+            raise ValueError("配置候选请使用 compare-files，不能注册到提示词工作区")
         self.directory = Path(directory).resolve()
         self.directory.mkdir(parents=True, exist_ok=True)
         self.telemetry = Telemetry(self.directory, mode=telemetry_mode, plugin=telemetry_plugin,
@@ -71,6 +74,8 @@ class ExperimentManager:
         for agent in agents:
             if not isinstance(agent, AgentSpec) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", agent.id):
                 raise ValueError("Agent 必须是 AgentSpec，id 仅允许字母、数字、下划线和连字符")
+            if agent.candidate_kind != "prompt":
+                raise ValueError("配置候选请使用 compare-files，不能注册到提示词工作区")
             if agent.id in self.agents:
                 raise ValueError("Agent id 重复")
             self.agents[agent.id] = agent
@@ -159,6 +164,8 @@ class ExperimentManager:
         """所有入口使用当前证据判定；历史布尔值或客户端传值不能授予新资格。"""
         from .verification import validate_candidate, validate_receipt
         try:
+            if record.get("candidateKind", "prompt") != "prompt":
+                return False
             if record.get("status") != "completed" or record.get("stage") != "verification":
                 return False
             receipt, candidate = record["verificationReceipt"], record["frozenCandidate"]
@@ -321,21 +328,22 @@ class ExperimentManager:
                     update(result, final=True)
                     self.telemetry.emit("experiment.finished", experiment_id=eid, agent_id=agent_id,
                                         status=result["status"], used_calls=result.get("usedCalls"))
-                except Exception as exc:
+                except BaseException as exc:
                     # 用户回调可能把 URL 或凭据带进异常；HTTP 账本不保存未经控制的堆栈。
                     from .ask_data_validation import ValidationUseError
                     message = (str(exc) if isinstance(exc, ValidationUseError) else
                                "实验执行失败，请检查 Agent、数据集或评分函数配置。")
-                    failure = {"status": "failed", "adoptable": False, "message": message}
+                    status = "cancelled" if isinstance(exc, KeyboardInterrupt) else "failed"
+                    failure = {"status": status, "adoptable": False, "message": message}
                     try:
                         update(failure, final=True)
-                    except Exception:
+                    except BaseException:
                         # 磁盘满时仍要在本进程结束 running；磁盘上的旧记录重启后标为 interrupted。
                         with self._guard:
                             self._records[eid].update(status="failed", adoptable=False, updatedAt=now(),
                                                      message="无法保存实验结果，请检查工作区磁盘空间和写入权限；候选未采用。")
                     self.telemetry.emit("experiment.finished", experiment_id=eid, agent_id=agent_id,
-                                        status="failed")
+                                        status=status)
                 finally:
                     with self._guard:
                         self._jobs.pop(eid, None)
@@ -366,6 +374,8 @@ class ExperimentManager:
         with self._guard:
             self._writable()
             record = self.get(experiment_id)
+            if record.get("candidateKind", "prompt") != "prompt":
+                raise ExperimentError("配置候选不能作为提示词采用", 409)
             active = self.active_prompt(record["agentId"])
             if active["experimentId"] == experiment_id:
                 return record

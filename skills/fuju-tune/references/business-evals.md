@@ -81,11 +81,11 @@ Benchmark 冻结只校验评分文件摘要；候选冻结还能显式记录其�
 factory 从 v2 开发包读取原样 Example 列表，参见 [接入契约](integration.md)：
 
 ```bash
-python <skill目录>/scripts/run_experiment.py --agent tune_agent:build_agent --workspace .yitrace-optimization --benchmark benchmarks/development-v1 --candidate-file prompt-v1.txt --max-calls 100
+python <skill目录>/scripts/run_experiment.py --agent tune_agent:build_agent --workspace .fuju-rsi --benchmark benchmarks/development-v1 --candidate-file prompt-v1.txt --max-calls 100
 ```
 
 helper 核对案例与顺序、评分源文件、冻结版本，并留下 manifest 副本和实验对应记录。holdout 包不能传给搜索入口：`load_bundle` 默认拒绝验收包，只有验收侧显式声明 `role="holdout"` 才读得出，并在读取案例正文之前就失败；搜索不运行 test，也不授予采用资格。独立验收走 [单独的验收命令](verification.md)。
 
 v1 四字段包保留读取兼容，旧 train/validation/test 三集合格式不变。搜索仅执行 train、validation；旧 test 的历史暴露未知，不能直接升级为独立验收题。迁移时复制成新 v2 开发包，保留原答案、补充可信来源并重新搜索；新建的 holdout 必须来自调优者未见且有依据的材料。
 
-案例与评分器留在开发、测试或 CI；业务生产程序不加载这些文件或 yiTrace。交付业务覆盖、未决规则、冻结版本与真实运行证据。生成题数、可信答案题数、已执行题数和独立来源组数分开报告。
+案例与评分器留在开发、测试或 CI；业务生产程序不加载这些文件或 Fuju RSI。交付业务覆盖、未决规则、冻结版本与真实运行证据。生成题数、可信答案题数、已执行题数和独立来源组数分开报告。

@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -127,6 +128,43 @@ def main():
         record = json.loads(result.stdout)
         assert record['searchComplete'] and not record['adoptable'], record
         print('installed CLI and report: OK')
+        # 在外部项目用已安装包运行新配置入口，再复制 Skill 走同一条链路。
+        # 不设置源码 PYTHONPATH，普通业务子进程 -I -S 下不能依赖 RSI。
+        business = root / 'file-business'
+        business.mkdir()
+        repository = Path(__file__).resolve().parents[1]
+        shutil.copyfile(repository / 'examples/file_config_fixture.py', business / 'file_config_fixture.py')
+        shutil.copytree(repository / 'examples/file_config_project', business / 'file_config_project')
+        copied_skill = root / 'copied-skill'
+        shutil.copytree(repository / 'skills/fuju-tune', copied_skill,
+                        ignore=shutil.ignore_patterns('__pycache__'))
+        subprocess.run([python, '-I', '-c',
+                        'import sys;sys.path.insert(0,".");import file_config_fixture as f;f.build_candidate("candidate.json")'],
+                       cwd=business, env=environment, check=True, timeout=30)
+        config_command = [python, '-I', '-m', 'fuju_rsi', 'compare-files', '--agent',
+                          'file_config_fixture:build_agent', '--workspace', str(root / 'file-cli'),
+                          '--candidate-file', 'candidate.json', '--max-calls', '5']
+        result = subprocess.run(config_command, cwd=business, env=environment, capture_output=True,
+                                text=True, check=True, timeout=30)
+        config = json.loads(result.stdout)
+        assert config['searchComplete'] and not config['adoptable'], config
+        assert config['candidateKind'] == 'files' and config['trials'][1]['validation']['score'] == 1, config
+        delivery = Path(config['artifacts']['candidate']).parent
+        clean = subprocess.run([python, '-I', '-S', '-c',
+                                'import importlib.util,sys;assert importlib.util.find_spec("fuju_rsi") is None;'
+                                'sys.path.insert(0,".");import file_config_fixture as f;'
+                                'assert f.run_business(sys.argv[1],{"question":"门店 A 的销售额是多少？"})'
+                                '["result"]["rows"] == [[100]]', str(delivery / 'candidate')],
+                               cwd=business, env=environment, capture_output=True, text=True, timeout=30)
+        assert clean.returncode == 0, clean.stderr
+        skill = subprocess.run([python, '-I', str(copied_skill / 'scripts/run_experiment.py'),
+                                '--candidate-kind', 'files', '--agent', 'file_config_fixture:build_agent',
+                                '--workspace', str(root / 'file-skill'), '--candidate-file', 'candidate.json',
+                                '--max-calls', '5'], cwd=business, env=environment,
+                               capture_output=True, text=True, timeout=30)
+        assert skill.returncode == 0, (skill.stdout, skill.stderr)
+        assert json.loads(skill.stdout)['searchComplete']
+        print('installed file CLI, copied Skill and detached config: OK')
         if args.with_trace:
             # 已装 SDK 但没装存储插件是独立的常见状态，真实卸掉 adapter 验证回退。
             subprocess.run([python, '-m', 'pip', 'uninstall', '-y', 'fuju-trace-sql'],

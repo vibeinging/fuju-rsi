@@ -1,0 +1,7 @@
+{
+  "aliases": {
+    "销售额": "order_count",
+    "营业额": "order_count",
+    "订单金额": "order_count"
+  }
+}

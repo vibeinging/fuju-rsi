@@ -1,5 +1,5 @@
 """独立验收的显式命令入口；网络服务不加载任意 factory。"""
-from contextlib import redirect_stdout, redirect_stderr
+from .output import private_output
 import importlib
 import json
 from pathlib import Path
@@ -58,7 +58,7 @@ def run(args):
         HoldoutRegistry(args.registry)
         logs = Path(args.registry) / "private-logs"
         logs.mkdir(exist_ok=True)
-        with (logs / ("loader-" + uuid.uuid4().hex + ".log")).open("w") as stream, redirect_stdout(stream), redirect_stderr(stream):
+        with (logs / ("loader-" + uuid.uuid4().hex + ".log")).open("w") as stream, private_output(stream):
             candidate = read_json(args.candidate)
             module, sep, factory = args.verifier.partition(":")
             if not sep or not factory.isidentifier():
@@ -79,7 +79,7 @@ def run(args):
         return 0 if receipt["body"]["adoptable"] else 2
     logs = Path(args.workspace) / "skill-runs"
     logs.mkdir(parents=True, exist_ok=True)
-    with (logs / ("verify-command-" + uuid.uuid4().hex + ".log")).open("w") as stream, redirect_stdout(stream), redirect_stderr(stream):
+    with (logs / ("verify-command-" + uuid.uuid4().hex + ".log")).open("w") as stream, private_output(stream):
         pack = None
         if getattr(args, "pack", None):
             from .runtime import load_pack, load_runtime_agent

@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from contextlib import redirect_stdout, redirect_stderr
+from .output import private_output
 from copy import deepcopy
 from dataclasses import dataclass, field
 import hashlib
@@ -78,6 +78,8 @@ def _files(paths, root):
 
 
 def validate_candidate(candidate, root):
+    if isinstance(candidate, dict) and candidate.get("candidateKind", "prompt") != "prompt":
+        raise ValueError("配置候选尚未接入独立验收，不能当作提示词验收")
     if not isinstance(candidate, dict) or candidate.get("schemaVersion") != 2:
         raise ValueError("候选包格式无效")
     if candidate.get("digest") != digest({k: v for k, v in candidate.items() if k != "digest"}):
@@ -112,6 +114,8 @@ def freeze_candidate(spec, result, *, source_files, environment, policy=None, ro
     """仅固定已完整搜索选出的一个候选；不会加载独立验收数据。"""
     from .core import development_examples, validate_spec
     validate_spec(spec)
+    if spec.candidate_kind != "prompt" or result.get("candidateKind", "prompt") != "prompt":
+        raise ValueError("配置候选尚未接入独立验收，请保留开发比较与普通文件差异")
     # 摘要和令牌都只由开发题派生，与 optimize 用同一份视图，验收题不参与。
     development = development_examples(spec.examples)
     if (result.get("status") != "completed" or not result.get("searchComplete") or
@@ -274,7 +278,7 @@ def verify_candidate(candidate, spec, *, registry, signing_key, root=".", max_ca
         logs = Path(registry if not isinstance(registry, HoldoutRegistry) else ledger.directory) / "private-logs"
         logs.mkdir(exist_ok=True)
         audit_path = logs / (job_id + ".jsonl")
-        with (logs / (job_id + ".log")).open("a", encoding="utf-8") as stream, audit_path.open("x", encoding="utf-8") as audit, redirect_stdout(stream), redirect_stderr(stream):
+        with (logs / (job_id + ".log")).open("a", encoding="utf-8") as stream, audit_path.open("x", encoding="utf-8") as audit, private_output(stream):
             for index, ex in enumerate(examples):
                 row = {"id": ex.id, "groupId": ex.group_id, "baselineScores": [], "candidateScores": [], "critical": ex.critical}
                 for repeat in range(policy.repeats):
@@ -324,7 +328,7 @@ def verify_candidate(candidate, spec, *, registry, signing_key, root=".", max_ca
         interrupted = True
         status = "cancelled"
         evidence = {"evidenceStatus": "invalid", "reasons": ["验收已取消；该批次不能重新用于选方案"]}
-    except Exception:
+    except BaseException:
         interrupted = True
         status = "failed"
         evidence = {"evidenceStatus": "invalid", "reasons": ["运行、评分或快照校验失败；未采用，验收批次不返还"]}

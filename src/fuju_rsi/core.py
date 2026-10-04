@@ -52,6 +52,8 @@ class AgentSpec:
     evaluator: Callable[[object, Prediction], Evaluation]
     description: str = ""
     kind: str = "custom"
+    # 内部仍复用成对开发比较；文件包不能沿旧提示词发布路径采用。
+    candidate_kind: str = "prompt"
 
     def __post_init__(self) -> None:
         validate_spec(self)
@@ -103,6 +105,8 @@ def validate_spec(spec: AgentSpec) -> None:
     for field in ("id", "name", "baseline_prompt", "kind"):
         _text(getattr(spec, field), field)
     _text(spec.description, "description", allow_empty=True)
+    if spec.candidate_kind not in ("prompt", "files"):
+        raise ValueError("candidate_kind 必须为 prompt 或 files")
     for field in ("runner", "proposer", "evaluator"):
         if not callable(getattr(spec, field)):
             raise ValueError("%s 必须可调用" % field)
@@ -257,6 +261,7 @@ def optimize(
                                                _json_value(example.expected, "expected"), example.split))
     runner, proposer, evaluator = spec.runner, spec.proposer, spec.evaluator
     state = {"agentId": spec.id, "status": "running", "baselinePrompt": prompt,
+             "candidateKind": spec.candidate_kind,
              "bestPrompt": prompt, "selectedTrialId": None, "adoptable": False,
              "message": "正在运行原版，建立比较基线。", "usedCalls": 0, "trials": [],
              "baselineTest": None, "candidateTest": None, "stage": "search",

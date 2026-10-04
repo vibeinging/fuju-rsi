@@ -50,8 +50,9 @@ class SkillAskDataTests(unittest.TestCase):
         self.assertEqual(code, 0, response)
         return response
 
-    def _skill(self, *, with_ledger=True):
-        command = [sys.executable, str(self.helper), "--agent", "ask_data_fixture:build_agent",
+    def _skill(self, *, with_ledger=True, scenario="ask-data"):
+        command = [sys.executable, str(self.helper), "--scenario", scenario,
+                   "--agent", "ask_data_fixture:build_agent",
                    "--workspace", str(self.workspace), "--benchmark", str(self.bundle),
                    "--candidate-file", "candidate.txt", "--max-calls", "5"]
         if with_ledger:
@@ -65,6 +66,32 @@ class SkillAskDataTests(unittest.TestCase):
         self.assertFalse(result["adoptable"])
         self.assertIn("--validation-ledger", result["error"])
         self.assertEqual(list((self.workspace / "experiments").glob("*.json")), [])
+
+    def test_draft_community_scene_cannot_run_or_spend_validation_budget(self):
+        scene = self.skill / "scenarios" / "tool-agent"
+        scene.mkdir()
+        (scene / "guide.md").write_text("# 工具调用\n", encoding="utf-8")
+        (scene / "manifest.json").write_text(json.dumps({
+            "schemaVersion": 1, "id": "tool-agent", "title": "工具调用",
+            "description": "检查工具调用结果。", "status": "draft", "guide": "guide.md",
+            "targets": ["tool-config"], "automatedTargets": [],
+        }), encoding="utf-8")
+        code, result = self._skill(scenario="tool-agent")
+        self.assertEqual(code, 1, result)
+        self.assertFalse(result["adoptable"])
+        self.assertIn("no executable integration", result["error"])
+        self.assertEqual(list((self.workspace / "experiments").glob("*.json")), [])
+        manifest = scene / "manifest.json"
+        value = json.loads(manifest.read_text(encoding="utf-8"))
+        value["status"] = "integrated"
+        manifest.write_text(json.dumps(value), encoding="utf-8")
+        code, result = self._skill(scenario="tool-agent")
+        self.assertEqual(code, 1, result)
+        self.assertIn("no executable integration", result["error"])
+        self.assertEqual(list((self.workspace / "experiments").glob("*.json")), [])
+        code, result = self._skill()
+        self.assertEqual(code, 0, result)
+        self.assertEqual(result["usedCalls"], 5)
 
     def test_cli_uses_bundle_for_factory_and_report(self):
         code, result = self._run([

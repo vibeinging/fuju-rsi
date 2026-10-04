@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import importlib
-from contextlib import redirect_stdout, redirect_stderr
+from .output import private_output
 import json
 import os
 from pathlib import Path
@@ -122,7 +122,7 @@ def run_report(args):
     logs = Path(args.workspace) / "skill-runs"
     logs.mkdir(parents=True, exist_ok=True)
     # factory 初始化也可能打印业务信息；命令的标准输出仅包含报告文件位置。
-    with (logs / ("report-" + uuid.uuid4().hex + ".log")).open("w", encoding="utf-8") as stream, redirect_stdout(stream), redirect_stderr(stream):
+    with (logs / ("report-" + uuid.uuid4().hex + ".log")).open("w", encoding="utf-8") as stream, private_output(stream):
         if args.ask_data_bundle:
             os.environ["FUJU_RSI_BENCHMARK"] = str(Path(args.ask_data_bundle).resolve())
         agent = build_demo_agent() if args.demo else load_agent(args.agent)

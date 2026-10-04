@@ -2,6 +2,8 @@
 
 搜索完成只表示找到一个开发候选。独立验收固定唯一候选，比较新案例上的原版和候选，再把汇总回执交给可信登记环境。下面命令已对应当前 SDK 的 `fuju-rsi verify`；不会创建 CI 账号、配置文件权限或部署产品。
 
+同一 Python 进程的私有输出捕获会串行执行，避免验收线程互换全局 stdout/stderr。需要并行运行验收时，使用独立进程。回调抛出退出类异常也会保守保存失败或中断终态，已使用的验收题不返还。
+
 ## 环境与身份
 
 准备三个职责边界：开发环境生成候选；验收环境持有未见题、使用历史与签名密钥；可信登记环境核验回执并更新实验。后两者可以由同一受控 CI 管理。相同账号下的目录或子进程只能作为 workflow_only 的流程检查。
@@ -27,7 +29,7 @@ fuju-rsi verify init --registry "$YT_VERIFY_HOME/history" --authority project-ci
 先按 SKILL.md 完成搜索，取得 stdout 的 id。准备非空 `evals/environment.json`，记录实际模型、工具、数据、运行方式等条件。示例命令沿用 `tune_agent.py` 适配器、`app.py` 业务入口与原实验工作区；把实验 id 替换为真实结果：
 
 ```bash
-fuju-rsi verify freeze --workspace .yitrace-optimization --agent tune_agent:build_agent --experiment <实验id> --source-file tune_agent.py --source-file app.py --environment-file evals/environment.json --output artifacts/candidate.json
+fuju-rsi verify freeze --workspace .fuju-rsi --agent tune_agent:build_agent --experiment <实验id> --source-file tune_agent.py --source-file app.py --environment-file evals/environment.json --output artifacts/candidate.json
 ```
 
 命令要求完整搜索选出的新候选，基线、Example 元数据和 runner/evaluator 文件均未变化。候选包固定提示词、开发输入与来源摘要、代码文件、运行条件及验收策略；不读取 holdout。
@@ -87,7 +89,7 @@ run 退出码：`0` 通过并可采用；`2` 已有结果但不可采用，包�
 实际路径替换为登记环境受控密钥位置。不能接受由候选生成者随回执附送的任意 authority-file 或密钥。在持有原搜索工作区、固定源码和受控密钥的登记环境执行：
 
 ```bash
-fuju-rsi verify import --workspace .yitrace-optimization --agent tune_agent:build_agent --receipt artifacts/receipt.json --authority-file /private-verification/authorities.json
+fuju-rsi verify import --workspace .fuju-rsi --agent tune_agent:build_agent --receipt artifacts/receipt.json --authority-file /private-verification/authorities.json
 ```
 
 导入核对签名、实验、固定候选与当前文件摘要；同一候选不能用另一个结果覆盖。导入同时生成独立的 report.md、result.json 与普通提示词/差异文件，stdout 的 artifacts 返回路径；可用 --report-dir 指定新目录。只有当前资格通过时才额外生成 verified-prompt.txt。导入退出码 0 只表示结果已登记并导出，仍需检查返回的 adoptable。手改 JSON 中的布尔字段、旧版 adoptable=true 或未登记的回执都不能授予采用资格。
@@ -95,13 +97,13 @@ fuju-rsi verify import --workspace .yitrace-optimization --agent tune_agent:buil
 无需前端的重新导出：
 
 ```bash
-fuju-rsi report --workspace .yitrace-optimization --agent tune_agent:build_agent --experiment <实验ID> --authority-file /private-verification/authorities.json --output reports/acceptance-review
+fuju-rsi report --workspace .fuju-rsi --agent tune_agent:build_agent --experiment <实验ID> --authority-file /private-verification/authorities.json --output reports/acceptance-review
 ```
 
 这只读已有实验，不重跑题目。可选本地查看器也要在可信登记环境配置相同入口：
 
 ```bash
-fuju-rsi optimize --workspace .yitrace-optimization --agent tune_agent:build_agent --serve --authority-file /private-verification/authorities.json
+fuju-rsi optimize --workspace .fuju-rsi --agent tune_agent:build_agent --serve --authority-file /private-verification/authorities.json
 ```
 
 页面只消费已有结果，当前 HTTP 不接受任意 verifier 模块或验收数据上传。工作区采用是可选实验状态，不能当成产品已上线。
@@ -114,4 +116,4 @@ fuju-rsi optimize --workspace .yitrace-optimization --agent tune_agent:build_age
 
 只在 `stage=verification`、`evidenceStatus=improved`、可信回执核验成功且 `adoptable=true` 时交付对应候选。同分、证据不足、退步、无效结果与中断均保留原版。合成协议测试只能证明运行与拒绝规则按预期工作，不能证明真实业务收益或独立来源声明为真。
 
-看过汇总后继续修改，就需要新独立验收材料；原题可留作已知回归，不能重复选优直到通过。删除工作区、更换文件名或多跑几轮不改变这个要求。最终交付普通提示词和可追溯证据，业务运行与回退不依赖 yiTrace。
+看过汇总后继续修改，就需要新独立验收材料；原题可留作已知回归，不能重复选优直到通过。删除工作区、更换文件名或多跑几轮不改变这个要求。最终交付普通提示词和可追溯证据，业务运行与回退不依赖 Fuju RSI。

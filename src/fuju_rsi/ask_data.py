@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections import Counter, deque
 from decimal import Decimal, InvalidOperation
+from fractions import Fraction
 import json
 import math
 from typing import Callable, Optional
@@ -248,18 +249,24 @@ def build_casebook(catalog):
 
 
 def _canonical(value):
+    # 数值转成精确分数，不受 Decimal 的当前精度影响。每种 JSON 类型均带标签，
+    # 防止业务对象与内部数值表示碰撞；0 与 -0 也应使用同一个比较键。
     if type(value) in (int, float):
-        return {"number": str(_number(value, "cell").normalize())}
+        number = Fraction(_number(value, "cell"))
+        return ("number", number.numerator, number.denominator)
     if type(value) is list:
-        return [_canonical(item) for item in value]
+        return ("list", [_canonical(item) for item in value])
     if type(value) is dict:
-        return {key: _canonical(item) for key, item in value.items()}
-    return value
+        return ("object", [(key, _canonical(value[key])) for key in sorted(value)])
+    if value is None:
+        return ("null",)
+    return (type(value).__name__, value)
 
 
 def _cell_equal(left, right, tolerance):
     if type(left) in (int, float) and type(right) in (int, float):
-        return abs(_number(left, "expected cell") - _number(right, "actual cell")) <= tolerance
+        return abs(Fraction(_number(left, "expected cell")) -
+                   Fraction(_number(right, "actual cell"))) <= Fraction(tolerance)
     if type(left) is not type(right):
         return False
     if type(left) is list:
@@ -382,9 +389,13 @@ def evaluate(expected, prediction: Prediction, *,
         pairs = zip(expected["turns"], actual_turns)
     else:
         pairs = [(expected, output)]
+    failure = None
     for index, (reference, actual) in enumerate(pairs, 1):
         passed, reason = _score_turn(reference, actual, behavior_judge=behavior_judge,
                                      delivery_judge=delivery_judge)
-        if not passed:
-            return Evaluation(0.0, "第 %d 轮：%s" % (index, reason))
+        if not passed and failure is None:
+            failure = "第 %d 轮：%s" % (index, reason)
+    # 后续轮次的运行/协议异常必须继续抛出，不能被前面的业务零分遮住。
+    if failure is not None:
+        return Evaluation(0.0, failure)
     return Evaluation(1.0, "全部必要轮次通过")

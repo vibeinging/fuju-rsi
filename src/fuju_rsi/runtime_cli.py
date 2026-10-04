@@ -1,5 +1,5 @@
 """Runtime 的有限作业和显式文件发布入口；stdout 仅输出汇总。"""
-from contextlib import redirect_stderr, redirect_stdout
+from .output import private_output
 import json
 from pathlib import Path
 import tempfile
@@ -25,6 +25,8 @@ def add_parser(subparsers):
         command.add_argument("--workspace", required=True)
         if name == "run":
             command.add_argument("--run-id", required=True)
+        if name == "init":
+            command.add_argument("--validation-ledger", help="shared validation history required for Ask Data packs")
     initial = commands.add_parser("prompt-init", help="register the existing product baseline as a new ordinary JSON file")
     initial.add_argument("--target", required=True)
     initial.add_argument("--agent-id", required=True)
@@ -60,7 +62,8 @@ def _execute(args):
         return {"status": "exported", "packDigest": pack["digest"], "limits": pack["limits"],
                 "directory": str(Path(args.output).resolve())}
     if command == "init":
-        return runtime.initialize_runtime(args.pack, args.workspace)
+        return runtime.initialize_runtime(args.pack, args.workspace,
+                                          validation_ledger=args.validation_ledger)
     if command == "run":
         return runtime.run_once(args.pack, args.workspace, args.run_id)
     if command == "status":
@@ -90,7 +93,7 @@ def run(args):
     # factory/runner 的打印可能带业务内容，放入仅本机可读的诊断文件。
     # 当前命令是独立进程；不在多任务宿主中全局 redirect_stdout。
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", prefix="yitrace-runtime-", suffix=".log", delete=False) as log:
-        with redirect_stdout(log), redirect_stderr(log):
+        with private_output(log):
             try:
                 result = _execute(args)
                 code = 0 if result.get("status") not in ("failed", "cancelled", "interrupted", "budget_exhausted") else 2

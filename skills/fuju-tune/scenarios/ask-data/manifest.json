@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "ask-data",
+  "title": "智能问数",
+  "description": "检查真实问数结果、澄清行为和多轮交付。",
+  "status": "integrated",
+  "guide": "guide.md",
+  "targets": ["metric-config", "metric-context", "dictionary", "project-rules", "prompt", "code"],
+  "automatedTargets": ["prompt", "metric-context", "dictionary", "project-rules"]
+}

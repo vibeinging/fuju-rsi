@@ -7,17 +7,38 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import replace
+from contextlib import contextmanager
 import inspect
 import os
 from pathlib import Path
 import shutil
 import stat
+import threading
 import uuid
 
 from .benchmark import digest, load_bundle, read_json, slug, write_new
 from .core import Example
 from .verification import _files, _relative_identity
 from .workspace import ExperimentManager, atomic_json, now
+
+
+_factory_environment_lock = threading.RLock()
+
+
+@contextmanager
+def _development_environment(directory):
+    # factory 读取的必须是已校验的开发包，不能误用宿主留下的另一轮路径。
+    # 环境变量属于进程，导入期间串行设置并恢复，避免 Runtime factory 相互干扰。
+    with _factory_environment_lock:
+        old = os.environ.get("FUJU_RSI_BENCHMARK")
+        os.environ["FUJU_RSI_BENCHMARK"] = str(Path(directory).resolve())
+        try:
+            yield
+        finally:
+            if old is None:
+                os.environ.pop("FUJU_RSI_BENCHMARK", None)
+            else:
+                os.environ["FUJU_RSI_BENCHMARK"] = old
 
 
 def _limit(value, maximum, label):
@@ -58,14 +79,20 @@ def export_pack(reference, development, output, *, source_files, max_trials=3,
     if limits["totalCalls"] < limits["maxCalls"]:
         raise ValueError("total_calls must cover one complete reservation")
     # load_agent 只在用户明确导出/运行时导入；factory 不应在 import 时执行付费工作。
-    agent = load_agent(reference)
+    with _development_environment(development):
+        agent = load_agent(reference)
+    if agent.candidate_kind != "prompt":
+        raise ValueError("配置候选请使用 compare-files；当前 Runtime 仅支持提示词")
+    if agent.kind == "ask-data" and manifest["scoring"] != "ask-data-structured-v1":
+        raise ValueError("Ask Data runtime requires its structured development benchmark")
     identity = _relative_identity((agent.runner, agent.evaluator, agent.proposer), Path.cwd())
     factory = __import__(reference.partition(":")[0], fromlist=[reference.partition(":")[2]])
     factory_file = inspect.getsourcefile(getattr(factory, reference.partition(":")[2]))
     files = _files([*source_files, factory_file, manifest["scorer"]["path"],
                     *(item["file"] for item in identity)], Path.cwd())
     pack = _sealed({"kind": "recur-improvement-pack", "schemaVersion": 1,
-                    "agentId": agent.id, "agentFactory": reference, "baselinePrompt": agent.baseline_prompt,
+                    "agentId": agent.id, "agentKind": agent.kind,
+                    "agentFactory": reference, "baselinePrompt": agent.baseline_prompt,
                     "benchmarkDigest": manifest["digest"], "files": files,
                     "callbackIdentity": identity, "limits": limits,
                     "editable": ["prompt"], "releaseMode": "review"})
@@ -109,9 +136,14 @@ def load_pack(directory):
 
 def _agent(directory, pack):
     from .cli import load_agent
-    agent = load_agent(pack["agentFactory"])
+    with _development_environment(Path(directory) / "development"):
+        agent = load_agent(pack["agentFactory"])
+    if agent.candidate_kind != "prompt":
+        raise ValueError("配置候选不能进入提示词 Runtime")
     if agent.id != pack["agentId"] or agent.baseline_prompt != pack["baselinePrompt"]:
         raise ValueError("Agent identity or baseline changed")
+    if pack.get("agentKind", agent.kind) != agent.kind:
+        raise ValueError("Agent kind changed")
     identity = _relative_identity((agent.runner, agent.evaluator, agent.proposer), Path.cwd())
     if identity != pack["callbackIdentity"]:
         raise ValueError("Agent callbacks changed")
@@ -124,14 +156,30 @@ def load_runtime_agent(directory):
     return _agent(directory, load_pack(directory))
 
 
-def initialize_runtime(pack_dir, workspace):
+def _needs_validation(pack_dir, pack):
+    return (pack.get("agentKind") == "ask-data" or
+            _development(Path(pack_dir) / "development")[0]["scoring"] == "ask-data-structured-v1")
+
+
+def initialize_runtime(pack_dir, workspace, *, validation_ledger=None):
     pack = load_pack(pack_dir)
+    required = _needs_validation(pack_dir, pack)
+    if required and validation_ledger is None:
+        raise ValueError("Ask Data runtime requires a shared validation ledger")
+    if validation_ledger is not None and not required:
+        raise ValueError("Validation ledger is only for Ask Data runtime")
+    binding = None
+    if validation_ledger is not None:
+        from .ask_data_validation import ValidationLedger
+        ledger = ValidationLedger(validation_ledger)
+        binding = {"directory": str(ledger.directory), "metadata": ledger.metadata}
     workspace = Path(workspace)
     # 只接受新目录。账本缺失时不能把旧工作区重新初始化成零预算。
     workspace.mkdir(parents=True, exist_ok=False)
     try:
         atomic_json(workspace / "runtime.json", {"schemaVersion": 1, "packDigest": pack["digest"],
-                    "limits": pack["limits"], "jobs": {}, "createdAt": now()})
+                    "limits": pack["limits"], "jobs": {}, "createdAt": now(),
+                    "validationLedger": binding})
     except BaseException:
         shutil.rmtree(workspace)
         raise
@@ -166,9 +214,23 @@ def run_once(pack_dir, workspace, run_id):
     """
     slug(run_id, "run_id")
     pack = load_pack(pack_dir)
-    _state(workspace, pack)  # 不存在/损坏时在导入业务代码之前失败。
+    state = _state(workspace, pack)  # 不存在/损坏时在导入业务代码之前失败。
+    binding = state.get("validationLedger")
+    if _needs_validation(pack_dir, pack):
+        from .ask_data_validation import ValidationLedger
+        if (not isinstance(binding, dict) or set(binding) != {"directory", "metadata"} or
+                type(binding["directory"]) is not str):
+            raise ValueError("Ask Data runtime has no bound validation ledger")
+        if ValidationLedger(binding["directory"]).metadata != binding["metadata"]:
+            raise ValueError("Runtime validation ledger identity or limit changed")
+    elif binding is not None:
+        raise ValueError("Unexpected runtime validation ledger")
     agent = _agent(pack_dir, pack)
-    manager = ExperimentManager(workspace, [agent])
+    if agent.kind == "ask-data" and binding is None:
+        raise ValueError("Ask Data runtime requires a shared validation ledger")
+    manager = ExperimentManager(workspace, [agent],
+        ask_data_bundle=Path(pack_dir) / "development" if binding else None,
+        validation_ledger=binding["directory"] if binding else None)
     try:
         state = _state(workspace, pack)
         if manager.active_prompt(agent.id)["prompt"] != pack["baselinePrompt"]:
@@ -279,6 +341,8 @@ def publish_prompt(manager, experiment_id, path, *, expected_version):
     with _PromptLock(path):
         current = prompt_status(path)
         record = manager.get(experiment_id)
+        if record.get("candidateKind", "prompt") != "prompt":
+            raise ValueError("配置候选不能通过提示词发布入口交付")
         if not record["adoptable"] or record["status"] != "completed":
             raise ValueError("Current trusted independent verification is required")
         if (current["version"] != expected_version or current["agentId"] != record["agentId"] or

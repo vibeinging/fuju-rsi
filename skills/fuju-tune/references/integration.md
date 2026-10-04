@@ -1,6 +1,6 @@
 # 接入契约
 
-factory 在测试工程工作目录可导入，例如 `tune_agent.py` 的 `build_agent`。它配置 runner、evaluator 与开发数据，不能在导入时执行有费用的实验。业务程序不 import 适配器；yiTrace 作为独立测试依赖。Node/TypeScript 业务可以由 Python 测试适配器调用，其生产进程无需安装 Python 或 yiTrace。
+factory 在测试工程工作目录可导入，例如 `tune_agent.py` 的 `build_agent`。它配置 runner、evaluator 与开发数据，不能在导入时执行有费用的实验。业务程序不 import 适配器；Fuju RSI 只在开发测试环境运行。Node/TypeScript 业务可以由 Python 测试适配器调用，其生产进程无需安装 Python 或 Fuju RSI。
 
 ## Python 适配器
 

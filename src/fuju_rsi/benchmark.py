@@ -133,12 +133,50 @@ def inspect_book(book, *, frozen=False):
         raise BenchmarkError("Frozen benchmark requires its role's nonempty splits")
     if frozen and warnings:
         raise BenchmarkError("Near-identical text uses different groups; resolve provenance before freezing")
+    if book.get("scoring") == "ask-data-structured-v1":
+        _check_ask_data_lineage(cases)
     result = {"id": book["id"], "name": book["name"], "caseCount": len(cases),
             "draftCount": drafts, "verifiedCount": len(cases) - drafts,
             "splits": dict(splits), "coverage": dict(sorted(coverage.items()))}
     if book["schemaVersion"] == 2:
         result.update(role=role, warnings=warnings)
     return result
+
+
+def _check_ask_data_lineage(cases):
+    """所有读写入口共用来源检查，手写案例也不能跳过 prepare 的父关系约束。"""
+    by_id = {case["id"]: case for case in cases}
+    edges = {}
+    for case in cases:
+        origin = case.get("origin", "original")
+        parents = case.get("parentCaseIds", [])
+        if (origin not in ("original", "variant", "synthetic") or type(parents) is not list or
+                any(type(parent) is not str or not parent.strip() for parent in parents)):
+            raise BenchmarkError("Invalid Ask Data origin or parentCaseIds")
+        if (origin == "variant" and not parents) or (origin == "original" and parents):
+            raise BenchmarkError("Ask Data variant must declare parents; original cannot have parents")
+        for parent_id in parents:
+            parent = by_id.get(parent_id)
+            if (parent is None or parent_id == case["id"] or
+                    parent["source"]["ref"] != case["source"]["ref"] or
+                    parent["group"] != case["group"] or parent.get("split") != case.get("split")):
+                raise BenchmarkError("Ask Data parent must share source, group and split")
+        edges[case["id"]] = parents
+    # 迭代遍历，长变体链不能触发 Python 递归上限。
+    visited, visiting = set(), set()
+    for identifier in edges:
+        stack = [(identifier, False)]
+        while stack:
+            current, done = stack.pop()
+            if done:
+                visiting.remove(current)
+                visited.add(current)
+            elif current in visiting:
+                raise BenchmarkError("Ask Data parent relationship cannot contain cycles")
+            elif current not in visited:
+                visiting.add(current)
+                stack.append((current, True))
+                stack.extend((parent, False) for parent in reversed(edges[current]))
 
 
 def near_key(value):

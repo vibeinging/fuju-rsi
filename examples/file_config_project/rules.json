@@ -1,0 +1,13 @@
+{
+  "metrics": {
+    "order_count": {
+      "sql": "SELECT COUNT(*) AS amount FROM orders WHERE region = ?",
+      "unit": "笔"
+    },
+    "revenue": {
+      "sql": "SELECT SUM(amount) AS amount FROM orders WHERE region = ?",
+      "unit": "元"
+    }
+  },
+  "displayHints": {}
+}

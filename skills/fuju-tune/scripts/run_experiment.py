@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import replace
 import inspect
 import json
@@ -69,10 +68,13 @@ def summarize(result, directory, run_log, candidate_count):
 def main(argv=None):
     parser = Parser(description=__doc__)
     parser.add_argument("--agent", required=True, help="local module:factory returning AgentSpec")
+    parser.add_argument("--scenario", help="explicit Skill scenario id; currently ask-data is executable")
     parser.add_argument("--workspace", required=True)
     parser.add_argument("--benchmark", help="optional frozen benchmark directory; verify cases and scorer before running")
     parser.add_argument("--validation-ledger", help="shared fixed-cap validation ledger; required for kind=ask-data")
     parser.add_argument("--candidate-file", action="append", default=[], help="UTF-8 full prompt; repeat for each candidate")
+    parser.add_argument("--candidate-kind", choices=["prompt", "files"], default="prompt",
+                        help="files uses versioned config candidate JSON and FileExperimentSpec")
     parser.add_argument("--max-calls", type=int, default=100, help="runner + proposer callbacks for this command, 0..10000")
     parser.add_argument("--name", help="experiment label, up to 120 characters")
     parser.add_argument("--report-dir", help="new output directory; default: a fresh workspace/reports snapshot")
@@ -83,6 +85,22 @@ def main(argv=None):
         parser.error("name must be at most 120 characters")
     if args.report_dir and (Path(args.report_dir).exists() or Path(args.report_dir).is_symlink()):
         parser.error("report-dir must be a new directory; use fuju-rsi report to export an existing experiment")
+    if args.candidate_kind == "files":
+        if args.scenario:
+            from scenarios import load_scenarios
+            selected = next((item for item in load_scenarios() if item['id'] == args.scenario), None)
+            if selected is None or selected['status'] != 'integrated' or selected['id'] != 'ask-data':
+                print(json.dumps({'status': 'failed', 'adoptable': False,
+                                  'error': 'This Skill scenario has no executable integration yet.'}))
+                return 1
+        try:
+            from fuju_rsi.file_cli import run as run_files
+        except ImportError:
+            print(json.dumps({'status': 'failed', 'error': 'Install the Fuju RSI package in this Python environment.'}))
+            return 1
+        args.ask_data_bundle = args.benchmark
+        args.skill_feedback = True
+        return run_files(args)
     candidates = []
     for path in args.candidate_file:
         try:
@@ -98,6 +116,7 @@ def main(argv=None):
     try:
         from fuju_rsi.cli import load_agent
         from fuju_rsi.workspace import ExperimentManager, atomic_json
+        from fuju_rsi.output import private_output
     except ImportError:
         print(json.dumps({"status": "failed", "error": "Install the Fuju RSI package in this Python environment."}))
         return 1
@@ -108,7 +127,14 @@ def main(argv=None):
     try:
         run_log.parent.mkdir(parents=True, exist_ok=True)
         # 业务函数可能 print 输入/答案；收进本地日志，不能泄漏到候选生成反馈中。
-        with run_log.open("w", encoding="utf-8") as stream, redirect_stdout(stream), redirect_stderr(stream):
+        with run_log.open("w", encoding="utf-8") as stream, private_output(stream):
+            if args.scenario:
+                from scenarios import load_scenarios
+                selected = next((item for item in load_scenarios() if item["id"] == args.scenario), None)
+                if selected is None:
+                    raise SkillUsageError("Unknown Skill scenario.")
+                if selected["status"] != "integrated" or selected["id"] != "ask-data":
+                    raise SkillUsageError("This Skill scenario has no executable integration yet.")
             if args.benchmark:
                 from fuju_rsi.benchmark import BenchmarkError, encode, load_bundle, read_json
                 # role="development" 在读取案例正文之前就拒绝 holdout 包。
@@ -117,6 +143,10 @@ def main(argv=None):
                 # factory 与 helper 读取同一个已校验开发包，避免接入方另配错版本。
                 os.environ["FUJU_RSI_BENCHMARK"] = str(Path(args.benchmark).resolve())
             spec = load_agent(args.agent)
+            if args.scenario and spec.kind != args.scenario:
+                raise SkillUsageError("The selected Skill scenario does not match AgentSpec.kind.")
+            if spec.kind not in ("ask-data", "custom", "demo"):
+                raise SkillUsageError("AgentSpec.kind has no executable Skill scenario.")
             if spec.kind == "ask-data":
                 if not args.benchmark or not args.validation_ledger:
                     raise SkillUsageError("Ask Data requires --benchmark and --validation-ledger before any run.")

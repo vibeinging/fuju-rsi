@@ -246,6 +246,8 @@ def write_report(record, output_dir):
     返回所有文件的绝对路径，不存在的候选或已验收文件以 None 表示。
     任何写入失败都会清理本次目录，已有输出永不覆盖。
     """
+    if isinstance(record, dict) and record.get("candidateKind", "prompt") != "prompt":
+        raise ValueError("配置候选请使用 export_file_report，不能导出提示词文件")
     if not isinstance(record, dict) or not isinstance(record.get("baselinePrompt"), str):
         raise ValueError("报告需要已核验的公开实验记录及原版提示词")
     if not isinstance(record.get("trials", []), list):
