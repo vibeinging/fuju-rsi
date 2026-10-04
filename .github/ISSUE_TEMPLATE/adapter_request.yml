@@ -1,0 +1,43 @@
+name: "场景与接入提案 / Scenario or adapter request"
+description: "提议新场景或业务程序接入 / Propose a scenario or an adapter for an existing program."
+title: "[Adapter] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请使用公开或合成样例，移除密钥、客户题库和私有结果。 / Please use public or synthetic examples without credentials, customer casebooks, or private results.
+  - type: textarea
+    id: goal
+    attributes:
+      label: "场景与目标 / Scenario and goal"
+      description: "程序要完成什么，当前希望评测或改进什么？ / What does the program do, and what would you like to evaluate or improve?"
+    validations:
+      required: true
+  - type: textarea
+    id: entry
+    attributes:
+      label: "已有程序入口 / Existing program entry point"
+      description: "说明语言、已有函数/命令/测试接口及如何独立运行；不需要生产地址 / Describe the language, function/command/test API, and isolated execution; no production endpoint is needed."
+    validations:
+      required: true
+  - type: textarea
+    id: correctness
+    attributes:
+      label: "正确答案或行为依据 / Correctness evidence"
+      description: "例如业务文档、已复核测试或独立参考计算；尚无依据时直接说明 / For example, business documentation, reviewed tests, or an independent reference calculation; say if none exists yet."
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: "允许调整的范围 / Allowed changes"
+      description: "例如提示词、词典或规则文件；说明哪些业务含义和评分依据需要保持固定 / For example, prompts, dictionaries, or rule files; state which business definitions and scoring evidence must stay fixed."
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: "公开或合成样例 / Public or synthetic example"
+      description: "可提供最小仓库、步骤或可分享样例链接；没有样例时可先描述计划 / Share a minimal repository, steps, or a shareable example link; describe a plan if no example is available yet."
+    validations:
+      required: false

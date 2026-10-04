@@ -13,12 +13,14 @@ def main(argv: Sequence[str] = None) -> int:
     from .verification_cli import add_parser as add_verify
     from .ask_data_cli import add_parser as add_ask_data
     from .file_cli import add_parser as add_files
+    from .onboarding import add_parser as add_connect
     add_optimize(sub)
     add_report_parser(sub)
     add_runtime(sub)
     add_verify(sub)
     add_ask_data(sub)
     add_files(sub)
+    add_connect(sub)
     args = parser.parse_args(argv)
     if args.command == "optimize":
         from .cli import run
@@ -30,6 +32,8 @@ def main(argv: Sequence[str] = None) -> int:
         from .ask_data_cli import run
     elif args.command == "compare-files":
         from .file_cli import run
+    elif args.command == "connect":
+        from .onboarding import run
     else:
         from .verification_cli import run
     try:

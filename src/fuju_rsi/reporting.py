@@ -132,7 +132,7 @@ def _summarize(record):
         "schemaVersion": 1, "exportedAt": datetime.now(timezone.utc).isoformat(),
         "id": _text(record.get("id")), "experimentId": _text(record.get("id")), "agentId": _text(record.get("agentId")),
         "name": _text(record.get("name")), "stage": stage, "status": status,
-        "kind": record.get("kind") if record.get("kind") in {"demo", "custom"} else "unknown",
+        "kind": record.get("kind") if record.get("kind") in {"demo", "custom", "ask-data"} else "unknown",
         "evidenceStatus": evidence_status, "searchComplete": record.get("searchComplete") is True,
         "adoptable": qualified, "selectedTrialId": selected_id,
         "candidateAvailable": candidate_prompt is not None,
@@ -176,15 +176,19 @@ def _conclusion(summary):
 
 
 def _report(summary):
+    baseline_only = summary["stage"] == "search" and not any(trial["id"] != "baseline" for trial in summary["trials"])
     scope = ("本次为离线 SQLite 与规则候选示例，用于检查工具流程，不代表云模型或真实产品的收益。"
              if summary["kind"] == "demo" else
              "本报告只覆盖所接 runner 和已声明的业务范围；没有据此推断运行使用了真实模型。")
-    lines = ["# yiTrace 调优报告", "", _conclusion(summary), "", scope, "",
+    title = "# Fuju RSI 原版评测报告" if baseline_only else "# Fuju RSI 评测报告"
+    lines = [title, "", _conclusion(summary), "", scope, "",
              "这是导出时的快照，不是长期有效的验收凭据。源文件、环境、基线或规则变化后须重新核验。", "",
              "- 实验：" + _markdown(summary["name"] or summary["experimentId"] or "未知"),
              "- 阶段 / 状态：" + _markdown(summary["stage"] + " / " + summary["status"]),
              "- 导出时间：" + _markdown(summary["exportedAt"]), "",
-             "## 开发集比较", "", "开发训练题用于调优，开发验证题用于选择候选；两者都不能证明未见业务的收益。", "",
+             "## 原版结果" if baseline_only else "## 开发集比较", "",
+             "本次只检查原版的开发案例，不能据此证明未见业务的准确率。" if baseline_only else
+             "开发训练题用于调优，开发验证题用于选择候选；两者都不能证明未见业务的收益。", "",
              "| 方案 | 选中 | 数据集 | 平均评分 | 通过 / 总数 | 已运行 / 总数 | 累计耗时 ms | 运行错误 | 完整比较 |",
              "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |"]
     for trial in summary["trials"]:
@@ -198,11 +202,12 @@ def _report(summary):
                 "是" if batch.get("complete") else "否 / 未知"))
     if not summary["trials"]:
         lines.append("| 无运行记录 | — | — | 未知 | 未知 | 未知 | 未知 | 未知 | 否 / 未知 |")
-    lines += ["", "上表包括未选中的候选。累计耗时是批次内运行耗时之和，不是单次平均延迟。",
+    lines += ["", ("" if baseline_only else "上表包括未选中的候选。") + "累计耗时是批次内运行耗时之和，不是单次平均延迟。",
               "不完整批次的分数包含未完成案例的影响，仅供排查，不代表完成验收。", "", "## 独立验收", ""]
     evidence = summary["verification"]
     if evidence is None:
-        lines.append("没有可展示的独立验收汇总。新候选需要先固定快照，再交给独立验收环境。")
+        lines.append("本次只运行原版，不执行独立验收，也不授予采用资格。" if baseline_only else
+                     "没有可展示的独立验收汇总。新候选需要先固定快照，再交给独立验收环境。")
     else:
         interval = evidence.get("interval") or {}
         lines += ["- 证据状态：" + _markdown(summary["evidenceStatus"]),
@@ -226,7 +231,9 @@ def _report(summary):
     if summary["candidateAvailable"]:
         lines.append("- `candidate-prompt.txt` 和 `prompt.diff`：选定候选及修改内容，供审查。")
     if summary["adoptable"]:
-        lines.append("- `verified-prompt.txt`：导出时通过核验的候选。接入普通提示词或配置后，仍需运行业务测试和移除 yiTrace 后的运行检查。")
+        lines.append("- `verified-prompt.txt`：导出时通过核验的候选。接入普通提示词或配置后，仍需运行业务测试和移除 Fuju RSI 后的运行检查。")
+    elif baseline_only:
+        lines.append("- 本次仅交付原版记录和报告；运行完整不代表所有案例正确，请核对失败与异常。")
     else:
         lines.append("- 本次不交付 `verified-prompt.txt`；继续使用原版。完整开发候选可固定后交给独立验收，证据不足或失败时不能采用。")
     lines += ["", "报告导出不启动浏览器、HTTP 或 DB，也不写入产品配置。交付物是普通文件；网站和控制台均不是运行依赖。",

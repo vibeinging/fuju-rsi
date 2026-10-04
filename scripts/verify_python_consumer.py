@@ -95,6 +95,39 @@ if with_trace:
 print('installed consumer:', mode, 'OK')
 '''
 
+CONNECT_APP = '''
+import importlib.util, json, sys
+assert importlib.util.find_spec("fuju_rsi") is None
+request = json.load(sys.stdin)
+print(json.dumps({"amount": sum(request["amounts"])}))
+'''
+
+CONNECT_ADAPTER = '''
+import json, subprocess, sys
+from pathlib import Path
+from fuju_rsi import AgentSpec, Evaluation, Example, Prediction
+
+def runner(prompt, request):
+    with Path("calls.txt").open("a") as stream:
+        stream.write(prompt + "\\n")
+    result = subprocess.run([sys.executable, "-I", "-S", "business.py"],
+                            input=json.dumps(request), capture_output=True, text=True,
+                            check=True, timeout=5)
+    return Prediction(json.loads(result.stdout))
+
+def evaluate(expected, observed):
+    return Evaluation(float(expected == observed.output), "Known arithmetic regression")
+
+def proposer(*args):
+    raise AssertionError("baseline has no proposer calls")
+
+def build_agent():
+    return AgentSpec("clean-connect", "Consumer connection", "original product config", [
+        Example("train", {"amounts": [2, 4]}, {"amount": 6}, "train"),
+        Example("validation", {"amounts": [3, 5]}, {"amount": 8}, "validation"),
+    ], runner, proposer, evaluate)
+'''
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -138,6 +171,33 @@ def main():
         copied_skill = root / 'copied-skill'
         shutil.copytree(repository / 'skills/fuju-tune', copied_skill,
                         ignore=shutil.ignore_patterns('__pycache__'))
+        # 陌生项目先生成连接骨架，再模拟编码 Agent 绑定真实业务命令。
+        # 安装 wheel、复制 Skill 和业务进程均不使用源码 PYTHONPATH。
+        connection_project = root / 'connect-business'
+        connection_project.mkdir()
+        (connection_project / 'business.py').write_text(CONNECT_APP, encoding='utf-8')
+        subprocess.run([python, '-I', '-m', 'fuju_rsi', 'connect', 'init', '--kind', 'custom',
+                        '--project', str(connection_project)], cwd=root, env=environment,
+                       capture_output=True, text=True, check=True, timeout=30)
+        adapter = connection_project / '.fuju-rsi/connection/fuju_connection_adapter.py'
+        adapter.write_text(CONNECT_ADAPTER, encoding='utf-8')
+        connect_helper = copied_skill / 'scripts/connect.py'
+        check = subprocess.run([python, '-I', str(connect_helper), 'check', '--project', str(connection_project)],
+                               cwd=root, env=environment, capture_output=True, text=True, check=True, timeout=30)
+        assert json.loads(check.stdout)['status'] == 'ready', check.stdout
+        assert not (connection_project / 'calls.txt').exists()
+        baseline_records = []
+        for command in ([python, '-I', '-m', 'fuju_rsi', 'connect'], [python, '-I', str(connect_helper)]):
+            baseline = subprocess.run(command + ['baseline', '--project', str(connection_project), '--max-calls', '2'],
+                                      cwd=root, env=environment, capture_output=True, text=True, check=True, timeout=30)
+            response = json.loads(baseline.stdout)
+            assert response['baselineComplete'] and not response['adoptable'], response
+            assert response['mode'] == 'baseline' and response['usedCalls'] == 2, response
+            assert Path(response['artifacts']['report']).is_file(), response
+            baseline_records.append(response['record'])
+        assert baseline_records[0] != baseline_records[1]
+        assert len((connection_project / 'calls.txt').read_text().splitlines()) == 4
+        print('installed connect CLI, copied Skill and isolated business baseline: OK')
         subprocess.run([python, '-I', '-c',
                         'import sys;sys.path.insert(0,".");import file_config_fixture as f;f.build_candidate("candidate.json")'],
                        cwd=business, env=environment, check=True, timeout=30)

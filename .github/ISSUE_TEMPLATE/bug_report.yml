@@ -1,0 +1,58 @@
+name: "问题反馈 / Bug report"
+description: "反馈安装、接入或运行问题 / Report installation, connection, or runtime issues."
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请提供脱敏步骤或公开/合成样例，移除密钥、客户题库和私有结果。 / Please share redacted steps or public/synthetic examples without credentials, customer casebooks, or private results.
+  - type: dropdown
+    id: host
+    attributes:
+      label: "使用的工具 / Host"
+      options:
+        - Codex
+        - Claude Code
+        - "其他编码工具 / Other coding agent"
+        - "仅 CLI 或 SDK / CLI or SDK only"
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: "版本与安装方式 / Versions and installation"
+      placeholder: |
+        Fuju RSI 版本、分支或 commit / version, branch, or commit:
+        宿主版本 / host version:
+        Python 与操作系统 / Python and OS:
+        安装方式与目标目录类型 / installation method and project or user installation:
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: "执行的命令或请求 / Command or request"
+      description: "使用占位符替换私有路径和参数 / Replace private paths and arguments with placeholders."
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: "预期结果 / Expected behavior"
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: "实际结果 / Actual behavior"
+      description: "简述现象，可附脱敏错误摘要 / Describe what happened; a redacted error summary is welcome."
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: "最小复现 / Minimal reproduction"
+      description: "提供步骤或公开/合成样例链接；无法复现时说明已尝试的步骤 / Share steps or a public/synthetic example link; describe attempts if it is not reproducible."
+    validations:
+      required: true

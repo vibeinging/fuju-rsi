@@ -1,6 +1,6 @@
 ---
 name: fuju-tune
-description: "Improve an existing business Agent through real reruns, reviewed cases, bounded configuration or prompt changes, and independent verification. Includes Ask Data and contributed scenarios."
+description: "Connect an existing business Agent to Fuju RSI, produce its first baseline report, or improve it through real reruns and bounded configuration or prompt changes. Includes Ask Data and independent verification."
 ---
 
 # Fuju RSI · Agent 评测与改进
@@ -16,6 +16,12 @@ description: "Improve an existing business Agent through real reruns, reviewed c
 **默认无前端执行。** 官网用于介绍、安装与文档；Skill 不登录网站、不启动本地控制台，也不把业务样本上传到官网。CLI/SDK 执行并输出独立文件，控制台只是可选查看器。
 
 **默认零线上依赖。** SDK 只安装在开发、测试或 CI 环境，适配器调用业务原有函数、命令或测试 HTTP。交付普通提示词、配置或代码差异，沿用产品的启动、发布和回退方式。线上 trace SDK、DB 和工作区提示词读取都是独立可选集成。
+
+## 第一次接入
+
+用户说“给当前项目接入 Fuju RSI，先跑原版并给我报告”时，读[首次接入](references/onboarding.md)。由你检查测试环境、寻找真实入口和已有测试、填写测试适配器，使用 `scripts/connect.py inspect / init / check / baseline` 完成第一份报告。首次安装读[安装入口](references/install.md)，使用已确认来源的 SDK 并安装到开发环境。
+
+复用已有连接、案例依据和共享账本；只补问现有资料无法回答的必要信息，不要求用户手写工厂或内部参数。骨架未填写就报告缺项，不能换演示数据伪装接通。问数仍选 `ask-data` 并遵守冻结题集/账本规则；`check` 不执行业务，原版运行仍需核对已有授权和调用范围。首次只请求接入时，交付原版报告即可，不自行搜索候选或采用改动。
 
 ## 准备
 

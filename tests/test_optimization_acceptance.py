@@ -246,7 +246,9 @@ class AcceptanceComparisonTests(unittest.TestCase):
                     json.dumps(result, allow_nan=False)
 
     def test_bound_is_clipped_and_finite_for_extreme_valid_confidence(self):
-        for confidence in (math.nextafter(0.0, 1.0), math.nextafter(1.0, 0.0)):
+        # 使用相邻浮点数的精确字面值，保留边界覆盖并兼容 Python 3.8。
+        for confidence in (float.fromhex("0x0.0000000000001p-1022"),
+                           float.fromhex("0x1.fffffffffffffp-1")):
             result = compare([case(i) for i in range(2)], policy(min_groups=2, confidence=confidence))
             self.assertGreaterEqual(result["interval"]["lower"], -1.0)
             self.assertLessEqual(result["interval"]["lower"], 1.0)

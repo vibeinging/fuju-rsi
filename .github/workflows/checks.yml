@@ -1,0 +1,36 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.8', '3.11', '3.14']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Python tests
+        run: python -m unittest discover -s tests
+        env:
+          PYTHONPATH: src
+      - name: Skill scenario manifests
+        run: python skills/fuju-tune/scripts/scenarios.py check
+      - name: Build and verify installed package
+        if: matrix.python == '3.11'
+        run: |
+          python -m pip install build
+          python -m build --wheel
+          python scripts/verify_python_consumer.py dist/*.whl
+          python -m pip install --no-deps dist/*.whl
+          python scripts/try_ask_data.py
